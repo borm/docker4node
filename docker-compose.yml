@@ -1,0 +1,70 @@
+version: "2"
+
+services:
+  php:
+    image: wodby/drupal-php:7.1-3.0.0
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      PHP_FPM_CLEAR_ENV: "no"
+      PHP_XDEBUG: 1
+      PHP_XDEBUG_DEFAULT_ENABLE: 1
+      PHP_XDEBUG_REMOTE_CONNECT_BACK: 0
+      PHP_XDEBUG_REMOTE_HOST: "10.254.254.254"
+    volumes:
+      - ./:/var/www/html
+
+  nginx:
+    image: wodby/drupal-nginx:7-1.13-3.0.1
+    depends_on:
+      - php
+      - node
+    environment:
+      NGINX_STATIC_CONTENT_OPEN_FILE_CACHE: "off"
+      NGINX_ERROR_LOG_LEVEL: debug
+      NGINX_BACKEND_HOST: php
+      NGINX_SERVER_ROOT: /var/www/html/web
+    volumes:
+      - ./:/var/www/html
+      - ./nginx/drupal-7.conf.tpl:/etc/gotpl/drupal-7.conf.tpl
+    labels:
+      - 'traefik.backend=nginx'
+      - 'traefik.port=80'
+      - 'traefik.frontend.rule=Host: test.local,m.test.local'
+      - 'traefix.port=443'
+      - 'traefik.frontend.entryPoints=http,https'
+    links:
+      - node  # will use this one here
+
+  node:
+    image: node:alpine
+    user: root
+    working_dir: /var/www
+    command: sh -c 'apk add --no-cache python make g++ && npm install && npm run dev'
+    volumes:
+      - ./slices:/var/www/
+      - /var/www/node_modules
+    ports:
+      - "3000:3000"
+#    image: node:alpine
+#    user: root
+#    working_dir: /var/www/html/app
+#    ports:
+#      - "3000:3000"
+##    expose:
+##      - "3000"
+#    volumes:
+#      - ./:/var/www/html
+#      - ./slices:/var/www/html/app
+#      - /var/www/html/app/node_modules
+#    command: sh -c 'apk add --no-cache python make g++ && npm install && npm run dev'
+
+  traefik:
+    image: traefik
+    command: '-c /dev/null --web --docker --logLevel=INFO --defaultEntryPoints=''http, https'' --entryPoints="Name:https Address::443 TLS:/certs/cert.pem,/certs/key.pem" --entryPoints="Name:http Address::80"'
+    ports:
+      - '80:80'
+      - '443:443'
+      - '8080:8080' # Dashboard
+    volumes:
+      - './certs:/certs/'
+      - //var/run/docker.sock:/var/run/docker.sock
